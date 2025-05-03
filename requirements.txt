@@ -1,0 +1,11 @@
+torch
+torchaudio
+transformers
+datasets
+librosa
+scikit-learn
+pandas
+numpy
+matplotlib
+tqdm
+jupyter
