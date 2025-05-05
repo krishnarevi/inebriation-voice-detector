@@ -3,7 +3,8 @@
 
 # Ignore data folder
 data/
-
+notebooks/output/
+output/
 # Ignore model weights (optional)
 model/
 
