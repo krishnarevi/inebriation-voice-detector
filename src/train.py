@@ -1,178 +1,162 @@
-"""
-Main script to train and evaluate the inebriation voice detector model.
-"""
 import os
 import time
+import argparse
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.optim as optim
-import matplotlib.pyplot as plt
-import seaborn as sns
-from config import (
-    DEVICE, TRAIN_DIR, VAL_DIR, TEST_DIR, OUTPUT_DIR, 
-    LEARNING_RATE, EPOCHS, set_seed
-)
-from data_utils import get_data_loaders
-from model import create_model, WeightedBinaryCrossEntropyLoss, train_epoch, evaluate
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from tqdm import tqdm
 
-def plot_metrics(train_metrics, val_metrics, metric_name, title, filename):
-    """Plot training and validation metrics over epochs"""
-    plt.figure(figsize=(10, 6))
-    plt.plot(train_metrics, label='Train')
-    plt.plot(val_metrics, label='Validation')
-    plt.title(title)
-    plt.xlabel('Epoch')
-    plt.ylabel(metric_name.capitalize())
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(os.path.join(OUTPUT_DIR, filename))
-    plt.close()
+from dataloader import create_dataloaders
+from model import get_model
+from utils import AverageMeter, save_checkpoint, plot_training_history
 
-def plot_confusion_matrix(cm, classes, filename):
-    """Plot confusion matrix"""
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=classes, yticklabels=classes)
-    plt.title('Confusion Matrix')
-    plt.ylabel('True Label')
-    plt.xlabel('Predicted Label')
-    plt.tight_layout()
-    plt.savefig(os.path.join(OUTPUT_DIR, filename))
-    plt.close()
+def train_one_epoch(model, dataloader, criterion, optimizer, device):
+    """Train the model for one epoch."""
+    model.train()
+    
+    losses = AverageMeter('Loss')
+    accuracies = AverageMeter('Acc')
+    
+    pbar = tqdm(dataloader, desc='Training')
+    for inputs, targets in pbar:
+        inputs = inputs.to(device)  # [batch_size, 3, 224, 224] expected
+        targets = targets.to(device)
+        
+        optimizer.zero_grad()
+        outputs = model(inputs)
+        loss = criterion(outputs, targets)
+        loss.backward()
+        optimizer.step()
+        
+        _, preds = torch.max(outputs, 1)
+        acc = torch.sum(preds == targets).item() / targets.size(0)
+        
+        losses.update(loss.item(), inputs.size(0))
+        accuracies.update(acc, inputs.size(0))
+        pbar.set_postfix({'loss': losses.avg, 'acc': accuracies.avg})
+    
+    return losses.avg, accuracies.avg
 
-def plot_roc_curve(fpr, tpr, roc_auc, filename):
-    """Plot ROC curve"""
-    plt.figure(figsize=(8, 6))
-    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
-    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('Receiver Operating Characteristic')
-    plt.legend(loc="lower right")
-    plt.grid(True)
-    plt.savefig(os.path.join(OUTPUT_DIR, filename))
-    plt.close()
+def validate(model, dataloader, criterion, device):
+    """Validate the model on the validation set."""
+    model.eval()
+    
+    losses = AverageMeter('Loss')
+    accuracies = AverageMeter('Acc')
+    
+    with torch.no_grad():
+        pbar = tqdm(dataloader, desc='Validation')
+        for inputs, targets in pbar:
+            inputs = inputs.to(device)
+            targets = targets.to(device)
+            
+            outputs = model(inputs)
+            loss = criterion(outputs, targets)
+            
+            _, preds = torch.max(outputs, 1)
+            acc = torch.sum(preds == targets).item() / targets.size(0)
+            
+            losses.update(loss.item(), inputs.size(0))
+            accuracies.update(acc, inputs.size(0))
+            pbar.set_postfix({'loss': losses.avg, 'acc': accuracies.avg})
+    
+    return losses.avg, accuracies.avg
 
-def plot_probability_distribution(probs, labels, filename):
-    """Plot probability distribution for each class"""
-    plt.figure(figsize=(10, 6))
-    for i, class_name in [(0, 'SOBER'), (1, 'DRUNK')]:
-        class_probs = probs[labels == i]
-        if len(class_probs) > 0:
-            sns.kdeplot(class_probs, label=class_name, fill=True)
-    plt.title('Probability Distribution by Class')
-    plt.xlabel('Predicted Probability of DRUNK')
-    plt.ylabel('Density')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig(os.path.join(OUTPUT_DIR, filename))
-    plt.close()
-
-def main():
-    """Main function to run training and evaluation"""
-    # Set random seed for reproducibility
-    set_seed(42)
+def train(args):
+    """Main training function."""
+    device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
+    print(f"Using device: {device}")
     
-    # Get data loaders
-    train_loader, val_loader, test_loader = get_data_loaders(TRAIN_DIR, VAL_DIR, TEST_DIR)
+    train_loader, val_loader, test_loader = create_dataloaders(
+        args.data_dir,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        # rgb=True  # <-- Ensure dataset returns 3-channel spectrograms
+    )
     
-    # Create model
-    model = create_model()
-    model = model.to(DEVICE)
+    print(f"Train set size: {len(train_loader.dataset)}")
+    print(f"Validation set size: {len(val_loader.dataset)}")
+    print(f"Test set size: {len(test_loader.dataset)}")
     
-    # Set up loss function and optimizer
-    criterion = WeightedBinaryCrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+    model = get_model(args.model, num_classes=2, pretrained=args.pretrained).to(device)
+    criterion = nn.CrossEntropyLoss()
     
-    print("\nOptimizer Configuration:")
-    print("  Type: Adam")
-    print(f"  Initial learning rate: {LEARNING_RATE}")
-    print("  Learning rate scheduler: StepLR (step_size=10, gamma=0.1)")
+    if args.optimizer == 'adam':
+        optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    elif args.optimizer == 'sgd':
+        optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9, weight_decay=args.weight_decay)
+    else:
+        raise ValueError(f"Unsupported optimizer: {args.optimizer}")
     
-    # Initialize metrics storage
-    history = {
-        'train_loss': [], 'train_acc': [], 'train_precision': [], 'train_recall': [], 'train_f1': [],
-        'val_loss': [], 'val_acc': [], 'val_precision': [], 'val_recall': [], 'val_f1': []
-    }
+    scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5)
     
-    # Best model tracking
-    best_val_f1 = 0.0
-    best_model_path = os.path.join(OUTPUT_DIR, 'best_model.pth')
+    best_val_acc = 0.0
+    train_losses, train_accs = [], []
+    val_losses, val_accs = [], []
     
-    # Training loop
-    print("\nStarting training...")
-    start_time = time.time()
-    
-    for epoch in range(EPOCHS):
-        # Train one epoch
-        train_metrics = train_epoch(model, train_loader, criterion, optimizer, epoch)
+    print(f"Starting training for {args.epochs} epochs...")
+    for epoch in range(args.epochs):
+        print(f"\nEpoch {epoch + 1}/{args.epochs}")
         
-        # Evaluate on validation set
-        val_metrics = evaluate(model, val_loader, criterion)
+        train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, device)
+        val_loss, val_acc = validate(model, val_loader, criterion, device)
         
-        # Update learning rate
-        scheduler.step()
+        train_losses.append(train_loss)
+        train_accs.append(train_acc)
+        val_losses.append(val_loss)
+        val_accs.append(val_acc)
         
-        # Print epoch results
-        print(f"\nEpoch {epoch+1}/{EPOCHS} Results:")
-        print(f"  Train Loss: {train_metrics['loss']:.4f}, Acc: {train_metrics['accuracy']:.4f}, "
-              f"Prec: {train_metrics['precision']:.4f}, Rec: {train_metrics['recall']:.4f}, F1: {train_metrics['f1']:.4f}")
-        print(f"  Val Loss: {val_metrics['loss']:.4f}, Acc: {val_metrics['accuracy']:.4f}, "
-              f"Prec: {val_metrics['precision']:.4f}, Rec: {val_metrics['recall']:.4f}, F1: {val_metrics['f1']:.4f}")
+        scheduler.step(val_loss)
+        is_best = val_acc > best_val_acc
+        best_val_acc = max(val_acc, best_val_acc)
         
-        # Save metrics history
-        for key, value in train_metrics.items():
-            if key in history:
-                history[f'train_{key}'].append(value)
-        
-        for key, value in val_metrics.items():
-            if isinstance(value, (int, float)) and key in history:
-                history[f'val_{key}'].append(value)
-        
-        # Save best model
-        if val_metrics['f1'] > best_val_f1:
-            best_val_f1 = val_metrics['f1']
-            torch.save(model.state_dict(), best_model_path)
-            print(f"  New best model saved with validation F1: {best_val_f1:.4f}")
+        if is_best or (epoch + 1) % args.save_freq == 0:
+            save_checkpoint({
+                'epoch': epoch + 1,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'best_val_acc': best_val_acc,
+                'train_losses': train_losses,
+                'train_accs': train_accs,
+                'val_losses': val_losses,
+                'val_accs': val_accs,
+            }, is_best, args.output_dir)
     
-    # Training complete
-    training_time = time.time() - start_time
-    print(f"\nTraining completed in {training_time:.2f} seconds ({training_time/60:.2f} minutes)")
+    plot_training_history(train_losses, val_losses, train_accs, val_accs, args.output_dir)
     
-    # Load best model for final evaluation
-    model.load_state_dict(torch.load(best_model_path))
+    print("\nEvaluating on test set...")
+    test_loss, test_acc = validate(model, test_loader, criterion, device)
+    print(f"Test Loss: {test_loss:.4f}, Test Acc: {test_acc:.4f}")
     
-    # Evaluate on test set
-    print("\nEvaluating best model on test set...")
-    test_metrics = evaluate(model, test_loader, criterion)
-    
-    print("\nTest Set Results:")
-    print(f"  Loss: {test_metrics['loss']:.4f}")
-    print(f"  Accuracy: {test_metrics['accuracy']:.4f}")
-    print(f"  Precision: {test_metrics['precision']:.4f}")
-    print(f"  Recall: {test_metrics['recall']:.4f}")
-    print(f"  F1 Score: {test_metrics['f1']:.4f}")
-    print(f"  ROC AUC: {test_metrics['roc']['auc']:.4f}")
-    
-    # Plot metrics
-    plot_metrics(history['train_loss'], history['val_loss'], 'loss', 'Loss Over Epochs', 'loss_plot.png')
-    plot_metrics(history['train_acc'], history['val_acc'], 'accuracy', 'Accuracy Over Epochs', 'accuracy_plot.png')
-    plot_metrics(history['train_f1'], history['val_f1'], 'f1', 'F1 Score Over Epochs', 'f1_plot.png')
-    
-    # Plot confusion matrix
-    plot_confusion_matrix(test_metrics['confusion_matrix'], ['SOBER', 'DRUNK'], 'confusion_matrix.png')
-    
-    # Plot ROC curve
-    plot_roc_curve(test_metrics['roc']['fpr'], test_metrics['roc']['tpr'], 
-                  test_metrics['roc']['auc'], 'roc_curve.png')
-    
-    # Plot probability distribution
-    plot_probability_distribution(test_metrics['probabilities'], test_metrics['true_labels'], 
-                                 'probability_distribution.png')
-    
-    print(f"\nResults and plots saved to {OUTPUT_DIR}")
+    return model
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description='Train RGB spectrogram classifier')
+    
+    # Dataset
+    parser.add_argument('--data_dir', type=str, default='./data/dummy', help='Data directory')
+    
+    # Model
+    parser.add_argument('--model', type=str, default='cnn', choices=['cnn', 'resnet', 'efficientnet'], help='Model type')
+    parser.add_argument('--pretrained', action='store_true', help='Use pretrained weights (only for resnet/efficientnet)')
+    
+    # Training
+    parser.add_argument('--batch_size', type=int, default=10, help='Batch size')
+    parser.add_argument('--epochs', type=int, default=10, help='Epoch count')
+    parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
+    parser.add_argument('--optimizer', type=str, default='adam', choices=['adam', 'sgd'], help='Optimizer choice')
+    parser.add_argument('--weight_decay', type=float, default=1e-4, help='Weight decay')
+    parser.add_argument('--no_cuda', action='store_true', help='Force CPU mode')
+    parser.add_argument('--num_workers', type=int, default=4, help='Dataloader workers')
+    
+    # Output
+    parser.add_argument('--output_dir', type=str, default='./output', help='Checkpoint/output directory')
+    parser.add_argument('--save_freq', type=int, default=5, help='Checkpoint save frequency')
+    
+    args = parser.parse_args()
+    os.makedirs(args.output_dir, exist_ok=True)
+    model = train(args)
+

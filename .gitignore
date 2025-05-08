@@ -3,6 +3,8 @@
 
 # Ignore data folder
 data/
+src/old
+scripts/ref/
 notebooks/output/
 output/
 # Ignore model weights (optional)

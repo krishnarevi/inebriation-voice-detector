@@ -1,180 +1,128 @@
-"""
-Model architecture, loss functions, and evaluation metrics for the inebriation voice detector.
-"""
 import torch
 import torch.nn as nn
-import torchvision.models as models
-import numpy as np
-from tqdm import tqdm
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, roc_curve, auc
-from config import DEVICE, POSITIVE_WEIGHT, NEGATIVE_WEIGHT
+import torch.nn.functional as F
+from torchvision import models
+import timm
 
-class WeightedBinaryCrossEntropyLoss(nn.Module):
-    """Weighted binary cross entropy loss for handling class imbalance"""
-    def __init__(self, weight_pos=POSITIVE_WEIGHT, weight_neg=NEGATIVE_WEIGHT):
-        super(WeightedBinaryCrossEntropyLoss, self).__init__()
-        self.weight_pos = weight_pos
-        self.weight_neg = weight_neg
-        print("\nWeighted Binary Cross Entropy Loss:")
-        print(f"  Positive class (DRUNK) weight: {weight_pos}")
-        print(f"  Negative class (SOBER) weight: {weight_neg}")
+class SpectrogramCNN(nn.Module):
+    """Simple CNN architecture for spectrogram classification."""
+    
+    def __init__(self, num_classes=2):
+        super(SpectrogramCNN, self).__init__()
         
-    def forward(self, pred, target):
-        target = target.float()
-        loss = self.weight_pos * target * torch.log(pred + 1e-7) + \
-               self.weight_neg * (1 - target) * torch.log(1 - pred + 1e-7)
-        return -torch.mean(loss)
+        # Simple CNN architecture
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+        
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+        self.bn3 = nn.BatchNorm2d(128)
+        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)
+        
+        self.conv4 = nn.Conv2d(128, 256, kernel_size=3, stride=1, padding=1)
+        self.bn4 = nn.BatchNorm2d(256)
+        self.pool4 = nn.MaxPool2d(kernel_size=2, stride=2)
+        
+        # Calculate size after convolution and pooling layers
+        # Input: 224x224 -> 4 pooling layers with stride 2 -> 224/(2^4)=14
+        self.fc1 = nn.Linear(256 * 14 * 14, 512)
+        self.dropout = nn.Dropout(0.5)
+        self.fc2 = nn.Linear(512, num_classes)
+        
+    def forward(self, x):
+        # x shape: [batch_size, 1, 224, 224]
+        
+        x = self.pool1(F.relu(self.bn1(self.conv1(x))))
+        x = self.pool2(F.relu(self.bn2(self.conv2(x))))
+        x = self.pool3(F.relu(self.bn3(self.conv3(x))))
+        x = self.pool4(F.relu(self.bn4(self.conv4(x))))
+        
+        # Flatten
+        x = x.view(x.size(0), -1)
+        
+        x = F.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = self.fc2(x)
+        
+        return x
 
-def create_model():
-    """Create and configure ResNet-18 model for binary classification"""
-    # Load pretrained ResNet-18
-    model = models.resnet18(pretrained=True)
+class ResNetTransfer(nn.Module):
+    """Transfer learning model using pre-trained ResNet."""
     
-    print("\nModel Architecture (before modification):")
-    print(model)
-    
-    # Print number of parameters before modification
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"\nTotal parameters: {total_params:,}")
-    print(f"Trainable parameters: {trainable_params:,}")
-    
-    # Freeze all layers except final ones
-    for name, param in model.named_parameters():
-        if "fc" not in name:  # Freeze all layers except the fully connected layer
-            param.requires_grad = False
-    
-    # Modify the final fully connected layer for binary classification
-    num_ftrs = model.fc.in_features
-    model.fc = nn.Sequential(
-        nn.Linear(num_ftrs, 1),
-        nn.Sigmoid()
-    )
-    
-    print("\nModel Architecture (after modification):")
-    print(model)
-    
-    # Print number of parameters after modification
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"\nTotal parameters: {total_params:,}")
-    print(f"Trainable parameters: {trainable_params:,}")
-    
-    return model
+    def __init__(self, num_classes=2, pretrained=True):
+        super(ResNetTransfer, self).__init__()
+        
+        # Load pre-trained ResNet model
+        self.resnet = models.resnet18(pretrained=pretrained)
+        
+        # Modify first convolution layer to accept grayscale input (1 channel)
+        self.resnet.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        
+        # Replace final fully connected layer
+        num_features = self.resnet.fc.in_features
+        self.resnet.fc = nn.Linear(num_features, num_classes)
+        
+    def forward(self, x):
+        return self.resnet(x)
 
-def train_epoch(model, train_loader, criterion, optimizer, epoch):
-    """Train the model for one epoch"""
-    model.train()
-    running_loss = 0.0
-    correct = 0
-    total = 0
-    all_preds = []
-    all_labels = []
+class EfficientNetTransfer(nn.Module):
+    """Transfer learning model using pre-trained EfficientNet."""
     
-    # Use tqdm for progress bar
-    progress_bar = tqdm(train_loader, desc=f"Epoch {epoch+1}")
-    
-    for inputs, labels in progress_bar:
-        inputs = inputs.to(DEVICE)
-        labels = labels.to(DEVICE)
+    def __init__(self, num_classes=2, pretrained=True):
+        super(EfficientNetTransfer, self).__init__()
         
-        # Zero the parameter gradients
-        optimizer.zero_grad()
+        # Use timm library for EfficientNet
+        self.model = timm.create_model('efficientnet_b0', pretrained=pretrained)
         
-        # Forward pass
-        outputs = model(inputs)
-        outputs = outputs.squeeze()
-        loss = criterion(outputs, labels)
+        # Modify the first convolution layer to accept grayscale input
+        original_conv = self.model.conv_stem
+        self.model.conv_stem = nn.Conv2d(
+            1, original_conv.out_channels,
+            kernel_size=original_conv.kernel_size,
+            stride=original_conv.stride,
+            padding=original_conv.padding,
+            bias=False
+        )
         
-        # Backward pass and optimize
-        loss.backward()
-        optimizer.step()
+        # Replace classifier
+        num_features = self.model.classifier.in_features
+        self.model.classifier = nn.Linear(num_features, num_classes)
         
-        # Track statistics
-        running_loss += loss.item() * inputs.size(0)
-        
-        # Convert probabilities to binary predictions
-        preds = (outputs >= 0.5).float()
-        correct += (preds == labels).sum().item()
-        total += labels.size(0)
-        
-        # Store for metrics calculation
-        all_preds.extend(preds.cpu().numpy())
-        all_labels.extend(labels.cpu().numpy())
-        
-        # Update progress bar
-        progress_bar.set_postfix({
-            'loss': f"{loss.item():.4f}", 
-            'acc': f"{100 * correct / total:.2f}%"
-        })
-    
-    # Calculate epoch metrics
-    epoch_loss = running_loss / len(train_loader.dataset)
-    epoch_acc = 100 * correct / total
-    
-    # Additional metrics
-    all_preds = np.array(all_preds)
-    all_labels = np.array(all_labels)
-    metrics = {
-        'loss': epoch_loss,
-        'accuracy': accuracy_score(all_labels, all_preds),
-        'precision': precision_score(all_labels, all_preds, zero_division=0),
-        'recall': recall_score(all_labels, all_preds, zero_division=0),
-        'f1': f1_score(all_labels, all_preds, zero_division=0),
-    }
-    
-    return metrics
+    def forward(self, x):
+        return self.model(x)
 
-def evaluate(model, data_loader, criterion):
-    """Evaluate the model on the given data loader"""
-    model.eval()
-    all_preds = []
-    all_labels = []
-    all_probs = []  # Store raw probabilities for ROC curve
-    running_loss = 0.0
+def get_model(model_name='cnn', num_classes=2, pretrained=True):
+    """Factory function to get the specified model."""
     
-    with torch.no_grad():
-        for inputs, labels in data_loader:
-            inputs = inputs.to(DEVICE)
-            labels = labels.to(DEVICE)
+    if model_name == 'cnn':
+        return SpectrogramCNN(num_classes=num_classes)
+    elif model_name == 'resnet':
+        return ResNetTransfer(num_classes=num_classes, pretrained=pretrained)
+    elif model_name == 'efficientnet':
+        return EfficientNetTransfer(num_classes=num_classes, pretrained=pretrained)
+    else:
+        raise ValueError(f"Model {model_name} not supported.")
+
+if __name__ == "__main__":
+    # Test the model
+    model_names = ['cnn', 'resnet', 'efficientnet']
+    
+    for model_name in model_names:
+        try:
+            print(f"Testing {model_name} model...")
+            model = get_model(model_name)
+            print(model)
             
-            outputs = model(inputs)
-            outputs = outputs.squeeze()
-            loss = criterion(outputs, labels)
+            # Create a dummy input
+            x = torch.randn(4, 1, 224, 224)  # [batch_size, channels, height, width]
             
-            running_loss += loss.item() * inputs.size(0)
-            
-            # Store raw probabilities
-            all_probs.extend(outputs.cpu().numpy())
-            
-            # Convert probabilities to binary predictions
-            preds = (outputs >= 0.5).float()
-            
-            all_preds.extend(preds.cpu().numpy())
-            all_labels.extend(labels.cpu().numpy())
-    
-    # Calculate metrics
-    all_preds = np.array(all_preds)
-    all_labels = np.array(all_labels)
-    all_probs = np.array(all_probs)
-    
-    # ROC curve
-    fpr, tpr, _ = roc_curve(all_labels, all_probs)
-    roc_auc = auc(fpr, tpr)
-    
-    # Confusion matrix
-    cm = confusion_matrix(all_labels, all_preds)
-    
-    metrics = {
-        'loss': running_loss / len(data_loader.dataset),
-        'accuracy': accuracy_score(all_labels, all_preds),
-        'precision': precision_score(all_labels, all_preds, zero_division=0),
-        'recall': recall_score(all_labels, all_preds, zero_division=0),
-        'f1': f1_score(all_labels, all_preds, zero_division=0),
-        'confusion_matrix': cm,
-        'roc': {'fpr': fpr, 'tpr': tpr, 'auc': roc_auc},
-        'probabilities': all_probs,
-        'true_labels': all_labels
-    }
-    
-    return metrics
+            # Forward pass
+            output = model(x)
+            print(f"Output shape: {output.shape}")
+            print("-" * 50)
+        except Exception as e:
+            print(f"Error with {model_name}: {e}")
