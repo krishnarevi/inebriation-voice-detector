@@ -6,7 +6,9 @@ data/
 src/old
 scripts/ref/
 notebooks/output/
+notebooks/experiments/
 output/
+test_output/
 # Ignore model weights (optional)
 model/
 
