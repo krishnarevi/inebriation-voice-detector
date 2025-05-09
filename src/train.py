@@ -137,14 +137,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train RGB spectrogram classifier')
     
     # Dataset
-    parser.add_argument('--data_dir', type=str, default='./data/dummy', help='Data directory')
+    parser.add_argument('--data_dir', type=str, default='./data/processed', help='Data directory')
     
     # Model
     parser.add_argument('--model', type=str, default='cnn', choices=['cnn', 'resnet', 'efficientnet'], help='Model type')
     parser.add_argument('--pretrained', action='store_true', help='Use pretrained weights (only for resnet/efficientnet)')
     
     # Training
-    parser.add_argument('--batch_size', type=int, default=10, help='Batch size')
+    parser.add_argument('--batch_size', type=int, default=100, help='Batch size')
     parser.add_argument('--epochs', type=int, default=10, help='Epoch count')
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
     parser.add_argument('--optimizer', type=str, default='adam', choices=['adam', 'sgd'], help='Optimizer choice')

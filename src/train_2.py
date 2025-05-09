@@ -82,7 +82,7 @@ def evaluate(model, loader, criterion, device):
 def main():
     data_root = "./data/processed"
     batch_size = 100
-    num_epochs = 10
+    num_epochs = 30
     lr = 0.001
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
