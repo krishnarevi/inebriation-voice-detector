@@ -5,6 +5,7 @@ import os
 import matplotlib.pyplot as plt
 import pandas as pd
 import csv
+import feature_extractor
 from tqdm import tqdm
 
 
@@ -29,44 +30,62 @@ def split_audio(recording, sampling_rate, n_seconds, overlap):
     if overlap >= n_seconds:
         raise Exception("Error: n_seconds <= overlap")
 
-    def add_to_audio_list(y):
-        if len(y) / sampling_rate < n_seconds:
-            raise Exception(
-                    f'Length of audio lesser than `split size in seconds` - {len(y) / sampling_rate} seconds, required {n_seconds} seconds')
-        y = y[:required_length]
-        audio_list.append(y)
-
     audio_list = []
     required_length = n_seconds * sampling_rate
-    audio_in_seconds = len(recording) // sampling_rate
+    minimum_length = 0.25 * required_length
 
+    def add_to_audio_list(y):
+        #if len(y) / sampling_rate < n_seconds:
+        #    raise Exception(
+        #            f'Length of audio lesser than `split size in seconds` - {len(y) / sampling_rate} seconds, required {n_seconds} seconds')
+        if len(y) < minimum_length: return
+        if len(y) < required_length:
+            # Pad with zeros at the end
+            padding = required_length - len(y)
+            y = np.pad(y, (0, padding), mode='constant')
+        #else:
+        #    y = y[:required_length]
+        audio_list.append(y)
+
+    audio_in_seconds = librosa.get_duration(y=recording, sr=sampling_rate)
+    total_samples = len(recording)
+    start_sample = 0
+    step_size = int((n_seconds - overlap) * sampling_rate)
+
+    while start_sample < total_samples:
+        end_sample = start_sample + required_length
+        segment = recording[start_sample:end_sample]
+        add_to_audio_list(segment)
+        start_sample += step_size
+
+    #audio_in_seconds = len(recording) // sampling_rate
     # Check if the recording audio file is larger than the required number of seconds in a split
-    if audio_in_seconds >= n_seconds:
-        start = 0
-        end = n_seconds
-        left_out = None
+    #if audio_in_seconds >= n_seconds:
+    #    start = 0
+    #    end = n_seconds
+    #    left_out = None
 
         # Until highest multiple of n_seconds is reached, segment recording and store it in a list
-        while end <= audio_in_seconds:
-            index_at_start, index_at_end = start * sampling_rate, end * sampling_rate
-            new_audio_sample = recording[index_at_start:index_at_end]
-            add_to_audio_list(new_audio_sample)
-            left_out = audio_in_seconds - end       #amount left unprocessed
-            start = (start - overlap) + n_seconds   #updating the starting point
-            end = (end - overlap) + n_seconds       #updating the ending point
+    #    while end <= audio_in_seconds:
+    #        index_at_start, index_at_end = start * sampling_rate, end * sampling_rate
+    #        new_audio_sample = recording[index_at_start:index_at_end]
+    #        add_to_audio_list(new_audio_sample)
+    #        left_out = audio_in_seconds - end       #amount left unprocessed
+    #        start = (start - overlap) + n_seconds   #updating the starting point
+    #        end = (end - overlap) + n_seconds       #updating the ending point
 
         #For the remaining segment, the last n_seconds are added to the list
-        if left_out > 0:
-            new_audio_sample = recording[-n_seconds * sampling_rate:]
-            add_to_audio_list(new_audio_sample)
-    else:
+    #    if left_out > 0:
+    #        new_audio_sample = recording[-n_seconds * sampling_rate:]
+    #        add_to_audio_list(new_audio_sample)
+    #else:
         #If the recording is shorter, then the audio is repeated
-        new_audio_sample = np.append(recording, recording)
+    #    new_audio_sample = np.append(recording, recording)
 
         # If the recording is too short, it will be repeated multiple times
-        while len(new_audio_sample) < (sampling_rate * n_seconds):
-            new_audio_sample = np.hstack((new_audio_sample, new_audio_sample))
-        add_to_audio_list(new_audio_sample)
+    #    while len(new_audio_sample) < (sampling_rate * n_seconds):
+    #        new_audio_sample = np.hstack((new_audio_sample, new_audio_sample))
+    #    add_to_audio_list(new_audio_sample)
     return audio_list
 
 def mel_filters_with_spectrogram(audio,sampling_rate,filename):
@@ -113,10 +132,12 @@ def read_audio_basic_preprocess(filepath,file,label,base_path,image_path,samplin
     """
 
     out_data, out_labels = [], []
+    features_list = []
     full_path=os.path.join(filepath, file)
     if os.path.exists(full_path):
         #Loading the recording file
         recording, sr = librosa.load(full_path,sr=None, mono=False)
+
         target_sr = sampling_rate
 
         #Splitting recording into segments of n_seconds length
@@ -129,13 +150,17 @@ def read_audio_basic_preprocess(filepath,file,label,base_path,image_path,samplin
 
             #Generating name for spectrogram file
             out_filename = os.path.join(image_path, file)+"_"+str(i)+"_"+str(label)+'.jpg'
+            #Extracting acoustic features from the segment
+            features = feature_extractor.simple_acoustic_features(segment_resampled,target_sr,out_filename,label)
+            features_list.append(features)
+
             #Generating the spectrogram of the segment audio
-            mel_filters_with_spectrogram(segment_resampled, target_sr, out_filename)
+            mel_filters_with_spectrogram(segment_resampled, target_sr, out_filename) #UNDO
 
             out_data.append(out_filename)
             out_labels.append(int(label))
             
-    return out_data, out_labels
+    return out_data, out_labels, features_list
 
 def preprocess_data(base_path,image_path,filepaths,files,labels,n_seconds,desired_sr,overlap):
     """
@@ -150,7 +175,7 @@ def preprocess_data(base_path,image_path,filepaths,files,labels,n_seconds,desire
     out_labels
     """
 
-    out_data, out_labels = [],[]
+    out_data, out_labels, features_list = [],[], []
 
     for filepath,file,label in tqdm(zip(filepaths,files,labels),total=len(labels)):
         out_preprocessing = read_audio_basic_preprocess(filepath,file,label,base_path,image_path,desired_sr,n_seconds,overlap)
@@ -158,10 +183,11 @@ def preprocess_data(base_path,image_path,filepaths,files,labels,n_seconds,desire
         for i, out_label in enumerate(out_preprocessing[1]):
             out_data.append(out_preprocessing[0][i])
             out_labels.append(out_label)
+            features_list.append(out_preprocessing[2][i])
 
-    return out_data, out_labels
+    return out_data, out_labels, features_list
 
-def start_preprocess(datalist_file,filename_to_save,shuffle=True):
+def start_preprocess(datalist_file,filename_to_save,filefeat_to_save,shuffle=True):
     """
     Process a csv file with audio recording names and saves a csv file with spectrogram names
 
@@ -194,7 +220,7 @@ def start_preprocess(datalist_file,filename_to_save,shuffle=True):
 
     #file= '0061006001_h_00.wav'
     #sf.write('0061006001_h_00_resampled.wav',y_resampled, 16000)
-    out_data, out_labels = preprocess_data(base_path,image_path,df[0].values,df[1].values, df[2].values,segment_seconds,desired_sr,overlap)
+    out_data, out_labels,features_list = preprocess_data(base_path,image_path,df[0].values,df[1].values, df[2].values,segment_seconds,desired_sr,overlap)
 
     complete_output = np.concatenate((np.array([out_data]).T, np.array([out_labels]).T),axis=1)
 
@@ -204,6 +230,18 @@ def start_preprocess(datalist_file,filename_to_save,shuffle=True):
     out_filename = os.path.join(base_path, filename_to_save)
     out_df.to_csv(out_filename,index=False)
 
+    
+    # Convert to DataFrame and save to CSV
+    features_df = pd.DataFrame(features_list)
+
+    # Move 'file_name' to the beginning
+    cols = features_df.columns.tolist()
+    cols = [cols[-2]] + cols[:-2] + [cols[-1]]  # file_name, rest..., label
+
+    # Reorder DataFrame
+    features_df = features_df[cols]
+    out_filefeat = os.path.join(base_path, filefeat_to_save)
+    features_df.to_csv(out_filefeat, index=False)
 
 
 def classify_sessions(tbl_file):
@@ -296,20 +334,20 @@ def process_tlb_subsetfile(tlb_path,output_csv):
 #start_preprocess(output_csv,'spectrogram_list.csv',shuffle=True)
 
 #Generating .csv file with list of training audio
-tbl_file = os.path.join(os.path.dirname(__file__), 'TRAIN.TBL')
-output_csv = os.path.join(os.path.dirname(__file__), 'wav_labelsTrain.csv')
-process_tlb_subsetfile(tbl_file,output_csv)
-start_preprocess(output_csv,'spectrogram_listTrain.csv',shuffle=True)
+#tbl_file = os.path.join(os.path.dirname(__file__), 'TRAIN.TBL')
+#output_csv = os.path.join(os.path.dirname(__file__), 'wav_labelsTrain.csv')
+#process_tlb_subsetfile(tbl_file,output_csv)
+#start_preprocess(output_csv,'spectrogram_listTrain.csv','acoustic_featuresTrain.csv',shuffle=True)
 
 #Generating .csv file with list of test audio
-tbl_file = os.path.join(os.path.dirname(__file__), 'TEST.TBL')
-output_csv = os.path.join(os.path.dirname(__file__), 'wav_labelsTest.csv')
-process_tlb_subsetfile(tbl_file,output_csv)
-start_preprocess(output_csv,'spectrogram_listTest.csv',shuffle=True)
+#tbl_file = os.path.join(os.path.dirname(__file__), 'TEST.TBL')
+#output_csv = os.path.join(os.path.dirname(__file__), 'wav_labelsTest.csv')
+#process_tlb_subsetfile(tbl_file,output_csv)
+#start_preprocess(output_csv,'spectrogram_listTest.csv','acoustic_featuresTest.csv',shuffle=True)
 
 
 #Generating .csv file with list of validation audio
-tbl_file = os.path.join(os.path.dirname(__file__), 'D1.TBL')
+#tbl_file = os.path.join(os.path.dirname(__file__), 'D1.TBL')
 output_csv = os.path.join(os.path.dirname(__file__), 'wav_labelsVal.csv')
-process_tlb_subsetfile(tbl_file,output_csv)
-start_preprocess(output_csv,'spectrogram_listVal.csv',shuffle=True)
+#process_tlb_subsetfile(tbl_file,output_csv)
+start_preprocess(output_csv,'spectrogram_listVal.csv','acoustic_featuresVal.csv',shuffle=True)
