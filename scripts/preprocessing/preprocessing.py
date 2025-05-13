@@ -6,7 +6,9 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import csv
 import feature_extractor
+import data_augmentation 
 from tqdm import tqdm
+from pathlib import Path
 
 
 def split_audio(recording, sampling_rate, n_seconds, overlap):
@@ -115,14 +117,13 @@ def mel_filters_with_spectrogram(audio,sampling_rate,filename):
     fig.savefig(filename, dpi=100, format = 'jpg')
     plt.close(fig)
     
-def read_audio_basic_preprocess(filepath,file,label,base_path,image_path,sampling_rate,n_seconds,overlap):
+def read_audio_basic_preprocess(filepath,file,label,image_path,sampling_rate,n_seconds,overlap,method=None):
 
     """
     Loads recording files, cut it into segments, resample them to 16kHz and generate spectrogram
     Input:
         file: name of recording file
         label
-        base_path: folder with recordings
         sampling_rate: desired sampling rate of output
         n_seconds: length of each segment or split
         overlap: in seconds
@@ -133,10 +134,23 @@ def read_audio_basic_preprocess(filepath,file,label,base_path,image_path,samplin
 
     out_data, out_labels = [], []
     features_list = []
+    method_flag = ''
     full_path=os.path.join(filepath, file)
     if os.path.exists(full_path):
         #Loading the recording file
         recording, sr = librosa.load(full_path,sr=None, mono=False)
+
+        if method is not None:
+            #Applying augmentation method
+            if method == 'shift':
+                recording = data_augmentation.time_shift(recording, shift_max=0.2, sampling_rate=sr)
+                method_flag = 'S'
+            elif method == 'noise':
+                recording = data_augmentation.add_gaussian_noise(recording, noise_factor=0.005)
+                method_flag = 'N'
+            elif method == 'pitch':
+                recording = data_augmentation.pitch_shift(recording, sampling_rate=sr)
+                method_flag = 'P'
 
         target_sr = sampling_rate
 
@@ -145,11 +159,20 @@ def read_audio_basic_preprocess(filepath,file,label,base_path,image_path,samplin
                            overlap=overlap)
         for i, segment in enumerate(segments):
             
+            if method == 'masking':
+                segment = data_augmentation.time_masking(segment)
+                method_flag = 'M'
+
             #Resampling to 16kHz
             segment_resampled = librosa.resample(segment, orig_sr = sr, target_sr = target_sr )
 
             #Generating name for spectrogram file
-            out_filename = os.path.join(image_path, file)+"_"+str(i)+"_"+str(label)+'.jpg'
+            if label == 1:
+                spectSave_folder = os.path.join(image_path,"DRUNK")
+            else:
+                spectSave_folder = os.path.join(image_path,"SOBER")
+            #out_filename = os.path.join(image_path, file)+"_"+str(i)+"_"+str(label)+'.jpg'
+            out_filename = os.path.join(spectSave_folder, file)+"_"+str(i)+method_flag+"_"+str(label)+'.jpg'
             #Extracting acoustic features from the segment
             features = feature_extractor.simple_acoustic_features(segment_resampled,target_sr,out_filename,label)
             features_list.append(features)
@@ -162,10 +185,9 @@ def read_audio_basic_preprocess(filepath,file,label,base_path,image_path,samplin
             
     return out_data, out_labels, features_list
 
-def preprocess_data(base_path,image_path,filepaths,files,labels,n_seconds,desired_sr,overlap):
+def preprocess_data(image_path,filepaths,files,labels,n_seconds,desired_sr,overlap,method=None):
     """
     Input:
-    base_path: folder with audio files
     n_seconds: length of segments in seconds
     desired_sr: output sampling rate
     overlap: in seconds
@@ -178,7 +200,7 @@ def preprocess_data(base_path,image_path,filepaths,files,labels,n_seconds,desire
     out_data, out_labels, features_list = [],[], []
 
     for filepath,file,label in tqdm(zip(filepaths,files,labels),total=len(labels)):
-        out_preprocessing = read_audio_basic_preprocess(filepath,file,label,base_path,image_path,desired_sr,n_seconds,overlap)
+        out_preprocessing = read_audio_basic_preprocess(filepath,file,label,image_path,desired_sr,n_seconds,overlap,method)
 
         for i, out_label in enumerate(out_preprocessing[1]):
             out_data.append(out_preprocessing[0][i])
@@ -187,13 +209,15 @@ def preprocess_data(base_path,image_path,filepaths,files,labels,n_seconds,desire
 
     return out_data, out_labels, features_list
 
-def start_preprocess(datalist_file,filename_to_save,filefeat_to_save,shuffle=True):
+def start_preprocess(datalist_file,filename_to_save,filefeat_to_save,shuffle=True,method=None):
     """
     Process a csv file with audio recording names and saves a csv file with spectrogram names
 
     Input:
     datalist_file: csv file with a list of filenames and drunk flag (A: drunk, N: not drunk)
     filename_to_save: name of the output csv file, this file has a list of the spectrogram file names and drunk flag 
+    filefeat_to_save: name of the output csv file, this file has a list of the acoustic features and drunk flag
+    method: augmentation method to be used
     """
     #df[0]: file path
     #df[1]: files names
@@ -212,15 +236,16 @@ def start_preprocess(datalist_file,filename_to_save,filefeat_to_save,shuffle=Tru
     df[2]=df[2].apply(lambda x: 1 if x=='A' else 0)
 
     
-    base_path=os.path.dirname(__file__)
+    #base_path=os.path.dirname(__file__) #UNDO
+    base_path = spect_folder
     segment_seconds = 12
     desired_sr = 16000
     overlap = 0
-    image_path = base_path
+    image_path = spect_folder #UNDO base_path
 
     #file= '0061006001_h_00.wav'
     #sf.write('0061006001_h_00_resampled.wav',y_resampled, 16000)
-    out_data, out_labels,features_list = preprocess_data(base_path,image_path,df[0].values,df[1].values, df[2].values,segment_seconds,desired_sr,overlap)
+    out_data, out_labels,features_list = preprocess_data(image_path,df[0].values,df[1].values, df[2].values,segment_seconds,desired_sr,overlap,method)
 
     complete_output = np.concatenate((np.array([out_data]).T, np.array([out_labels]).T),axis=1)
 
@@ -324,6 +349,11 @@ def process_tlb_subsetfile(tlb_path,output_csv):
         writer.writerows(data)
 
 
+#Folder paths
+audio_folder = Path(r"C:\Users\nagap\OneDrive\Documentos\Maestria\2025S\Phonetics TeamLab\ALC")
+spect_folder = Path(r"C:\Users\nagap\OneDrive\Documentos\Maestria\2025S\Phonetics TeamLab\ALC\Spect")
+list_folder = Path(r"C:\Users\nagap\OneDrive\Documentos\Maestria\2025S\Phonetics TeamLab\ALC")
+
 #Generating csv with audio files list
 #tbl_file = os.path.join(os.path.dirname(__file__), 'SESSEXT.TBL')
 #root_folder = os.path.dirname(__file__)  
@@ -335,19 +365,19 @@ def process_tlb_subsetfile(tlb_path,output_csv):
 
 #Generating .csv file with list of training audio
 #tbl_file = os.path.join(os.path.dirname(__file__), 'TRAIN.TBL')
-#output_csv = os.path.join(os.path.dirname(__file__), 'wav_labelsTrain.csv')
+output_csv = os.path.join(list_folder, 'wav_labelsTrain.csv')
 #process_tlb_subsetfile(tbl_file,output_csv)
-#start_preprocess(output_csv,'spectrogram_listTrain.csv','acoustic_featuresTrain.csv',shuffle=True)
+start_preprocess(output_csv,'spectrogram_listTrain.csv','acoustic_featuresTrain.csv',shuffle=True,method='pitch')
 
 #Generating .csv file with list of test audio
 #tbl_file = os.path.join(os.path.dirname(__file__), 'TEST.TBL')
-#output_csv = os.path.join(os.path.dirname(__file__), 'wav_labelsTest.csv')
+#output_csv = os.path.join(list_folder, 'wav_labelsTest.csv')
 #process_tlb_subsetfile(tbl_file,output_csv)
-#start_preprocess(output_csv,'spectrogram_listTest.csv','acoustic_featuresTest.csv',shuffle=True)
+#start_preprocess(output_csv,'spectrogram_listTest.csv','acoustic_featuresTest.csv',shuffle=True,method='masking')
 
 
 #Generating .csv file with list of validation audio
 #tbl_file = os.path.join(os.path.dirname(__file__), 'D1.TBL')
-output_csv = os.path.join(os.path.dirname(__file__), 'wav_labelsVal.csv')
+#output_csv = os.path.join(list_folder, 'wav_labelsVal.csv')
 #process_tlb_subsetfile(tbl_file,output_csv)
-start_preprocess(output_csv,'spectrogram_listVal.csv','acoustic_featuresVal.csv',shuffle=True)
+#start_preprocess(output_csv,'spectrogram_listVal.csv','acoustic_featuresVal.csv',shuffle=True,method='masking')
