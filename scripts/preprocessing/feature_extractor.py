@@ -168,6 +168,3 @@ def simple_acoustic_features(audio_file,sample_rate,file_name,label):
         features["label"] = label
     return features  
 
-listfile_csv = os.path.join(os.path.dirname(__file__), 'wav_labelsTrain2.csv')
-output_csv = os.path.join(os.path.dirname(listfile_csv), 'acoustic_featuresTrain.csv')
-extract_acousticFeatures(listfile_csv, output_csv)
