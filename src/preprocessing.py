@@ -290,6 +290,23 @@ def classify_sessions(tbl_file):
             session_labels[f'ses{ses}'] = label
     return session_labels
 
+def bak_per_session(tbl_file):
+    """
+    Generates a dictionary with session numbers and BAK levels per session
+    Input:
+    tbl_file: .tbl file with list of session numbers and bak levels per session
+    Output:
+    data: dictionary with session numbers and BAK levels per session
+    """
+    sessions_data = {}
+    with open(tbl_file, 'r', newline='') as file:
+        reader = csv.DictReader(file, delimiter='\t')
+        for row in reader:
+            ses = 'ses'+row['SES']
+            bak = float(row['BAK'])
+            sessions_data[ses] = bak
+    return sessions_data
+
 def label_wav_files(root_folder, tbl_file, output_csv):
     """
     Generates a list of .wav files and assigns it a drunk flag (A drunk, N not drunk) base on BAK value per session
@@ -305,14 +322,19 @@ def label_wav_files(root_folder, tbl_file, output_csv):
 
     #Going through all of the session subfolders and listing .wav files
     session_labels = classify_sessions(tbl_file)
+
+    #Going through all of the session and getting its BAK values
+    session_bac = bak_per_session(tbl_file)
+
     results = []
     for session_folder in os.listdir(root_folder):
         if session_folder in session_labels:
             label = session_labels[session_folder]
             folder_path = os.path.join(root_folder, session_folder)
+            bac = session_bac[session_folder]
             for file in os.listdir(folder_path):
                 if file.endswith('.wav'):
-                    results.append([folder_path,file, label])
+                    results.append([folder_path,file, label,bac])
     
     # Writing output list to CSV
     with open(output_csv, 'w', newline='') as out_file:
@@ -348,6 +370,19 @@ def process_tlb_subsetfile(tlb_path,output_csv):
         writer = csv.writer(out_file)
         writer.writerows(data)
 
+
+def add_BACinfo(csv_file):
+    """
+    Adds BAC information to the csv file with audio files list
+    
+    Input:
+    csv_file: .csv file with list of audio files and indicator of drunk(A)/sober(N)
+
+    Output:
+    csv_file: .csv file with list of audio files and indicator of drunk(A)/sober(N) and BAC level
+    """
+
+    
 
 #Folder paths
 audio_folder = Path(r"C:\Users\nagap\OneDrive\Documentos\Maestria\2025S\Phonetics TeamLab\ALC")
