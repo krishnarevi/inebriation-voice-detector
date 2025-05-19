@@ -371,7 +371,7 @@ def process_tlb_subsetfile(tlb_path,output_csv):
         writer.writerows(data)
 
 
-def add_BACinfo(csv_file):
+def add_BACinfo(csv_file,bak_tbl_file,type):
     """
     Adds BAC information to the csv file with audio files list
     
@@ -379,15 +379,124 @@ def add_BACinfo(csv_file):
     csv_file: .csv file with list of audio files and indicator of drunk(A)/sober(N)
 
     Output:
-    csv_file: .csv file with list of audio files and indicator of drunk(A)/sober(N) and BAC level
+    csv_file: .csv file with: list of audio files, indicator of drunk(A)/sober(N), BAC level and taskID
     """
-
     
+    if type == 'WAV':
+        # Read the CSV file into a DataFrame
+        df = pd.read_csv(csv_file, header=None, delimiter=',')
+        if df.columns.size != 3:
+            return
+        # Create a new DataFrame to store the results
+        results = []
+        bac_levels = bak_per_session(bak_tbl_file)
+        # Iterate through each row in the original DataFrame
+        for index, row in df.iterrows():
+            file_path = row[0]
+            file_name = row[1]
+            label = row[2]
+
+            # Extract the session and block number from the file path
+            session_number = os.path.basename(file_path).split('_')[-1]
+            block_number = session_number[3]  # Assuming the first character is the block number
+            if block_number == '1' or block_number == '3':
+                task_set = 'DRUNK'
+            else:
+                task_set = 'SOBER'
+
+            #Extracting task ID
+            task_id = file_name.split('_')[0][-3:]
+
+            # Get the BAC level and task ID from the session number
+            bac_level = bac_levels[session_number]
+
+            # Append the results to the new DataFrame
+            results.append([file_path, file_name, label, bac_level, task_set, task_id])
+
+        # Convert the results to a DataFrame and save it to a new CSV file
+        results_df = pd.DataFrame(results, columns=['file_path', 'file_name', 'label', 'BAC_level', 'task_set', 'task_id'])
+        results_df.to_csv(csv_file, index=False, header=False)
+
+    elif type == 'SPECT':  
+        # Read the CSV file into a DataFrame
+        df = pd.read_csv(csv_file, delimiter=',')
+        if df.columns.size != 2:
+            return
+        
+        # Create a new DataFrame to store the results
+        results = []
+        bac_levels = bak_per_session(bak_tbl_file)
+
+        # Iterate through each row in the original DataFrame
+        for index, row in df.iterrows():
+            file_path = row[0]
+            label = row[1]
+
+
+            # Extract the session and block number from the file path
+            file_name = os.path.basename(file_path).split('_')[0]
+            session_number = file_name[-7:-3]
+            task_id = file_name[-3:]
+            block_number = session_number[0]
+            session_number = 'ses' + session_number
+
+            if block_number == '1' or block_number == '3':
+                task_set = 'DRUNK'
+            else:
+                task_set = 'SOBER'
+
+            # Get the BAC level and task ID from the session number
+            bac_level = bac_levels[session_number]  
+
+            # Append the results to the new DataFrame
+            results.append([file_path, label, bac_level, task_set, task_id])  
+
+        # Convert the results to a DataFrame and save it to a new CSV file
+        results_df = pd.DataFrame(results, columns=['spectrogram_fileP', 'label', 'BAC_level', 'task_set', 'task_id'])
+        results_df.to_csv(csv_file, index=False)
+
+
+def add_MergeTaskID(csv_file,task_file):
+    """
+    Adds Merge task ID to the csv file with audio files list
+    
+    Input:
+    csv_file: .csv file with list of audio files
+    task_file: .xlsx file with task IDs
+
+    Output:
+    csv_file: .csv file with additional MergeTaskID
+    """
+    
+    # Read the CSV file into a DataFrame
+    df = pd.read_csv(csv_file, delimiter=',', dtype={'task_id': str})
+    
+    drunk_tasks = pd.read_excel(task_file, sheet_name='Drunk tasks',dtype={'Drunk task ID': str,'Sober task ID': str, 'Merge task ID': str})
+    sober_tasks = pd.read_excel(task_file, sheet_name='Sober tasks',dtype={'Drunk task ID': str,'Sober task ID': str, 'Merge task ID': str})
+
+    #Creating mapping dictionaries
+    drunk_map = dict(zip(drunk_tasks['Drunk task ID'], drunk_tasks['Merge task ID']))
+    sober_map = dict(zip(sober_tasks['Sober task ID'], sober_tasks['Merge task ID']))
+
+    #Function to apply correct mapping acordinng to task set
+    def map_merge_id(row):
+        if row["task_set"] == 'DRUNK':
+            return drunk_map.get(row["task_id"])
+        elif row["task_set"] == 'SOBER':
+            return sober_map.get(row["task_id"])
+        else:
+            return None
+        
+    df['merge_id'] = df.apply(map_merge_id, axis=1)
+    df.to_csv(csv_file, index=False)
 
 #Folder paths
 audio_folder = Path(r"C:\Users\nagap\OneDrive\Documentos\Maestria\2025S\Phonetics TeamLab\ALC")
 spect_folder = Path(r"C:\Users\nagap\OneDrive\Documentos\Maestria\2025S\Phonetics TeamLab\ALC\Spect")
 list_folder = Path(r"C:\Users\nagap\OneDrive\Documentos\Maestria\2025S\Phonetics TeamLab\ALC")
+task_folder = Path(r"C:\Users\nagap\OneDrive\Documentos\Maestria\2025S\Phonetics TeamLab\DrunkenLinguists\inebriation-voice-detector")
+task_file = os.path.join(task_folder, 'TaskACL.xlsx')
+bak_file = os.path.join(list_folder, 'SESSEXT.TBL')
 
 #Generating csv with audio files list
 #tbl_file = os.path.join(os.path.dirname(__file__), 'SESSEXT.TBL')
@@ -400,19 +509,30 @@ list_folder = Path(r"C:\Users\nagap\OneDrive\Documentos\Maestria\2025S\Phonetics
 
 #Generating .csv file with list of training audio
 #tbl_file = os.path.join(os.path.dirname(__file__), 'TRAIN.TBL')
-output_csv = os.path.join(list_folder, 'wav_labelsTrain.csv')
+#output_csv = os.path.join(list_folder, 'wav_labelsTrain.csv')
+#add_BACinfo(output_csv,bak_file,'WAV')
 #process_tlb_subsetfile(tbl_file,output_csv)
-start_preprocess(output_csv,'spectrogram_listTrain.csv','acoustic_featuresTrain.csv',shuffle=True,method='pitch')
+#start_preprocess(output_csv,'spectrogram_listTrain.csv','acoustic_featuresTrain.csv',shuffle=True,method='pitch')
+#spect_csv = os.path.join(list_folder, 'spectrogram_listTrain.csv')
+#add_BACinfo(spect_csv,bak_file,'SPECT')
+#add_MergeTaskID(spect_csv,task_file)
 
 #Generating .csv file with list of test audio
 #tbl_file = os.path.join(os.path.dirname(__file__), 'TEST.TBL')
 #output_csv = os.path.join(list_folder, 'wav_labelsTest.csv')
+#add_BACinfo(output_csv,bak_file,'WAV')
 #process_tlb_subsetfile(tbl_file,output_csv)
 #start_preprocess(output_csv,'spectrogram_listTest.csv','acoustic_featuresTest.csv',shuffle=True,method='masking')
-
+spect_csv = os.path.join(list_folder, 'spectrogram_listTest.csv')
+#add_BACinfo(spect_csv,bak_file,'SPECT')
+add_MergeTaskID(spect_csv,task_file)
 
 #Generating .csv file with list of validation audio
 #tbl_file = os.path.join(os.path.dirname(__file__), 'D1.TBL')
 #output_csv = os.path.join(list_folder, 'wav_labelsVal.csv')
+#add_BACinfo(output_csv,bak_file,'WAV')
 #process_tlb_subsetfile(tbl_file,output_csv)
 #start_preprocess(output_csv,'spectrogram_listVal.csv','acoustic_featuresVal.csv',shuffle=True,method='masking')
+spect_csv = os.path.join(list_folder, 'spectrogram_listVal.csv')
+#add_BACinfo(spect_csv,bak_file,'SPECT')
+add_MergeTaskID(spect_csv,task_file)
