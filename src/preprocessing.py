@@ -140,6 +140,8 @@ def read_audio_basic_preprocess(filepath,file,label,image_path,sampling_rate,n_s
         #Loading the recording file
         recording, sr = librosa.load(full_path,sr=None, mono=False)
 
+        duration = librosa.get_duration(y=recording, sr=sr)
+
         if method is not None:
             #Applying augmentation method
             if method == 'shift':
@@ -159,7 +161,7 @@ def read_audio_basic_preprocess(filepath,file,label,image_path,sampling_rate,n_s
                            overlap=overlap)
         for i, segment in enumerate(segments):
             
-            if method == 'masking':
+            if method == 'masking' and duration < 1.5:
                 segment = data_augmentation.time_masking(segment)
                 method_flag = 'M'
 
