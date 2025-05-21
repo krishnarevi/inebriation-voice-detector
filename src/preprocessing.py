@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import csv
 import feature_extractor
-import data_augmentation 
+import data_augmentation
+import random 
 from tqdm import tqdm
 from pathlib import Path
 
@@ -141,13 +142,18 @@ def read_audio_basic_preprocess(filepath,file,label,image_path,sampling_rate,n_s
         recording, sr = librosa.load(full_path,sr=None, mono=False)
 
         duration = librosa.get_duration(y=recording, sr=sr)
+        rms = librosa.feature.rms(y=recording)[0]
+        rms_mean = np.nanmean(rms)
+
+        methods_list = ['shift','noise','pitch','masking',None]
+        method = random.choice(methods_list)
 
         if method is not None:
             #Applying augmentation method
-            if method == 'shift':
+            if method == 'shift' and duration > 2.5:
                 recording = data_augmentation.time_shift(recording, shift_max=0.2, sampling_rate=sr)
                 method_flag = 'S'
-            elif method == 'noise':
+            elif method == 'noise' and rms_mean >= 0.02 and rms_mean <=0.08:
                 recording = data_augmentation.add_gaussian_noise(recording, noise_factor=0.005)
                 method_flag = 'N'
             elif method == 'pitch':
@@ -161,7 +167,8 @@ def read_audio_basic_preprocess(filepath,file,label,image_path,sampling_rate,n_s
                            overlap=overlap)
         for i, segment in enumerate(segments):
             
-            if method == 'masking' and duration < 1.5:
+            if method == 'masking' and duration > 2.5:
+                #Only apply time masking if the segment is longer than 2.5 seconds
                 segment = data_augmentation.time_masking(segment)
                 method_flag = 'M'
 
