@@ -1,15 +1,17 @@
+
+import pandas as pd
 import librosa
 import numpy as np
 import soundfile as sf
 import os
 import matplotlib.pyplot as plt
-import pandas as pd
 import csv
 import feature_extractor
 import data_augmentation
 import random 
 from tqdm import tqdm
 from pathlib import Path
+
 
 
 def split_audio(recording, sampling_rate, n_seconds, overlap):
@@ -145,8 +147,15 @@ def read_audio_basic_preprocess(filepath,file,label,image_path,sampling_rate,n_s
         rms = librosa.feature.rms(y=recording)[0]
         rms_mean = np.nanmean(rms)
 
-        methods_list = ['shift','noise','pitch','masking',None]
-        method = random.choice(methods_list)
+        if method is not None:
+
+            methods_list = ['shift','noise','pitch','masking']
+            if duration <= 2.5:
+                methods_list.remove('shift')
+                methods_list.remove('masking')
+            if rms_mean < 0.02 or rms_mean >0.08:
+                methods_list.remove('noise')
+            method = random.choice(methods_list)
 
         if method is not None:
             #Applying augmentation method
@@ -194,7 +203,7 @@ def read_audio_basic_preprocess(filepath,file,label,image_path,sampling_rate,n_s
             
     return out_data, out_labels, features_list
 
-def preprocess_data(image_path,filepaths,files,labels,n_seconds,desired_sr,overlap,method=None):
+def preprocess_data(image_path,filepaths,files,labels,mergeIDs,n_seconds,desired_sr,overlap,method=None):
     """
     Input:
     n_seconds: length of segments in seconds
@@ -208,7 +217,13 @@ def preprocess_data(image_path,filepaths,files,labels,n_seconds,desired_sr,overl
 
     out_data, out_labels, features_list = [],[], []
 
-    for filepath,file,label in tqdm(zip(filepaths,files,labels),total=len(labels)):
+    for filepath,file,label,mergeID in tqdm(zip(filepaths,files,labels,mergeIDs),total=len(labels)):
+        if method is not None:
+            priority = priority_prob_map.get(mergeID, float('inf'))
+            random_val = np.random.rand()
+            if random_val > priority:
+                continue
+            
         out_preprocessing = read_audio_basic_preprocess(filepath,file,label,image_path,desired_sr,n_seconds,overlap,method)
 
         for i, out_label in enumerate(out_preprocessing[1]):
@@ -231,7 +246,7 @@ def start_preprocess(datalist_file,filename_to_save,filefeat_to_save,shuffle=Tru
     #df[0]: file path
     #df[1]: files names
     #df[2]: labels (A = drunk, N = not drunk)
-    df = pd.read_csv(datalist_file,header=None,delimiter=',')
+    df = pd.read_csv(datalist_file,header=None,delimiter=',',dtype={6: str})
     
     if shuffle:
         df=df.sample(frac=1)
@@ -254,7 +269,7 @@ def start_preprocess(datalist_file,filename_to_save,filefeat_to_save,shuffle=Tru
 
     #file= '0061006001_h_00.wav'
     #sf.write('0061006001_h_00_resampled.wav',y_resampled, 16000)
-    out_data, out_labels,features_list = preprocess_data(image_path,df[0].values,df[1].values, df[2].values,segment_seconds,desired_sr,overlap,method)
+    out_data, out_labels,features_list = preprocess_data(image_path,df[0].values,df[1].values, df[2].values,df[6].values,segment_seconds,desired_sr,overlap,method)
 
     complete_output = np.concatenate((np.array([out_data]).T, np.array([out_labels]).T),axis=1)
 
@@ -516,15 +531,26 @@ bak_file = os.path.join(list_folder, 'SESSEXT.TBL')
 
 #start_preprocess(output_csv,'spectrogram_list.csv',shuffle=True)
 
+script_dir = Path(__file__).resolve().parent.parent
+priority_folder = os.path.join(script_dir,'notebooks')
+priority_file = 'priority_merge_ids.csv'
+priority_fpath = os.path.join(priority_folder,priority_file)
+priority_merge_ids = pd.read_csv(priority_fpath, dtype=str)['Merge ID'].str.strip()
+max_rank = len(priority_merge_ids)
+priority_prob_map = {
+    mid: 1 - (rank / max_rank)  # higher rank = lower probability
+    for rank, mid in enumerate(priority_merge_ids)
+}
+
 #Generating .csv file with list of training audio
 #tbl_file = os.path.join(os.path.dirname(__file__), 'TRAIN.TBL')
-#output_csv = os.path.join(list_folder, 'wav_labelsTrain.csv')
+output_csv = os.path.join(list_folder, 'wav_labelsTrainUpdated.csv')
 #add_BACinfo(output_csv,bak_file,'WAV')
 #process_tlb_subsetfile(tbl_file,output_csv)
-#start_preprocess(output_csv,'spectrogram_listTrain.csv','acoustic_featuresTrain.csv',shuffle=True,method='pitch')
-#spect_csv = os.path.join(list_folder, 'spectrogram_listTrain.csv')
-#add_BACinfo(spect_csv,bak_file,'SPECT')
-#add_MergeTaskID(spect_csv,task_file)
+#start_preprocess(output_csv,'spectrogram_listTrainA.csv','acoustic_featuresTrainA.csv',shuffle=True,method='Yes')
+spect_csv = os.path.join(spect_folder, 'spectrogram_listTrainA.csv')
+add_BACinfo(spect_csv,bak_file,'SPECT')
+add_MergeTaskID(spect_csv,task_file)
 
 #Generating .csv file with list of test audio
 #tbl_file = os.path.join(os.path.dirname(__file__), 'TEST.TBL')
@@ -534,7 +560,7 @@ bak_file = os.path.join(list_folder, 'SESSEXT.TBL')
 #start_preprocess(output_csv,'spectrogram_listTest.csv','acoustic_featuresTest.csv',shuffle=True,method='masking')
 spect_csv = os.path.join(list_folder, 'spectrogram_listTest.csv')
 #add_BACinfo(spect_csv,bak_file,'SPECT')
-add_MergeTaskID(spect_csv,task_file)
+#add_MergeTaskID(spect_csv,task_file)
 
 #Generating .csv file with list of validation audio
 #tbl_file = os.path.join(os.path.dirname(__file__), 'D1.TBL')
@@ -544,4 +570,4 @@ add_MergeTaskID(spect_csv,task_file)
 #start_preprocess(output_csv,'spectrogram_listVal.csv','acoustic_featuresVal.csv',shuffle=True,method='masking')
 spect_csv = os.path.join(list_folder, 'spectrogram_listVal.csv')
 #add_BACinfo(spect_csv,bak_file,'SPECT')
-add_MergeTaskID(spect_csv,task_file)
+#add_MergeTaskID(spect_csv,task_file)
