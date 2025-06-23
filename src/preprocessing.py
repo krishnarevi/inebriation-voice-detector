@@ -218,11 +218,13 @@ def preprocess_data(image_path,filepaths,files,labels,mergeIDs,n_seconds,desired
     out_data, out_labels, features_list = [],[], []
 
     for filepath,file,label,mergeID in tqdm(zip(filepaths,files,labels,mergeIDs),total=len(labels)):
-        if method is not None:
-            priority = priority_prob_map.get(mergeID, float('inf'))
-            random_val = np.random.rand()
-            if random_val > priority:
-                continue
+        if method != None and label == 0: 
+            continue
+        #if method is not None:
+        #    priority = priority_prob_map.get(mergeID, float('inf'))
+        #    random_val = np.random.rand()
+        #    if random_val > priority:
+        #        continue
             
         out_preprocessing = read_audio_basic_preprocess(filepath,file,label,image_path,desired_sr,n_seconds,overlap,method)
 
@@ -262,7 +264,7 @@ def start_preprocess(datalist_file,filename_to_save,filefeat_to_save,shuffle=Tru
     
     #base_path=os.path.dirname(__file__) #UNDO
     base_path = spect_folder
-    segment_seconds = 12
+    segment_seconds = 10#8 #12
     desired_sr = 16000
     overlap = 0
     image_path = spect_folder #UNDO base_path
@@ -516,11 +518,12 @@ def add_MergeTaskID(csv_file,task_file):
 
 #Folder paths
 audio_folder = Path(r"C:\Users\nagap\OneDrive\Documentos\Maestria\2025S\Phonetics TeamLab\ALC")
-spect_folder = Path(r"C:\Users\nagap\OneDrive\Documentos\Maestria\2025S\Phonetics TeamLab\ALC\Spect")
+spect_folder = Path(r"C:\Users\nagap\OneDrive\Documentos\Maestria\2025S\Phonetics TeamLab\ALC\Spect10")
 list_folder = Path(r"C:\Users\nagap\OneDrive\Documentos\Maestria\2025S\Phonetics TeamLab\ALC")
 task_folder = Path(r"C:\Users\nagap\OneDrive\Documentos\Maestria\2025S\Phonetics TeamLab\DrunkenLinguists\inebriation-voice-detector")
 task_file = os.path.join(task_folder, 'TaskACL.xlsx')
 bak_file = os.path.join(list_folder, 'SESSEXT.TBL')
+
 
 #Generating csv with audio files list
 #tbl_file = os.path.join(os.path.dirname(__file__), 'SESSEXT.TBL')
@@ -544,30 +547,30 @@ priority_prob_map = {
 
 #Generating .csv file with list of training audio
 #tbl_file = os.path.join(os.path.dirname(__file__), 'TRAIN.TBL')
-output_csv = os.path.join(list_folder, 'wav_labelsTrainUpdated.csv')
+##output_csv = os.path.join(list_folder, 'wav_labelsTrainUpdated.csv')
 #add_BACinfo(output_csv,bak_file,'WAV')
 #process_tlb_subsetfile(tbl_file,output_csv)
-#start_preprocess(output_csv,'spectrogram_listTrainA.csv','acoustic_featuresTrainA.csv',shuffle=True,method='Yes')
-spect_csv = os.path.join(spect_folder, 'spectrogram_listTrainA.csv')
-add_BACinfo(spect_csv,bak_file,'SPECT')
-add_MergeTaskID(spect_csv,task_file)
+##start_preprocess(output_csv,'spectrogram_listTrain8.csv','acoustic_featuresTrain8.csv',shuffle=True,method=None)
+##spect_csv = os.path.join(spect_folder, 'acoustic_featuresTrain8.csv')
+##add_BACinfo(spect_csv,bak_file,'SPECT')
+##add_MergeTaskID(spect_csv,task_file)
 
 #Generating .csv file with list of test audio
 #tbl_file = os.path.join(os.path.dirname(__file__), 'TEST.TBL')
-#output_csv = os.path.join(list_folder, 'wav_labelsTest.csv')
+##output_csv = os.path.join(list_folder, 'wav_labelsTestUpdated.csv')
 #add_BACinfo(output_csv,bak_file,'WAV')
 #process_tlb_subsetfile(tbl_file,output_csv)
-#start_preprocess(output_csv,'spectrogram_listTest.csv','acoustic_featuresTest.csv',shuffle=True,method='masking')
-spect_csv = os.path.join(list_folder, 'spectrogram_listTest.csv')
-#add_BACinfo(spect_csv,bak_file,'SPECT')
-#add_MergeTaskID(spect_csv,task_file)
+##start_preprocess(output_csv,'spectrogram_listTest8.csv','acoustic_featuresTest8.csv',shuffle=True,method=None)
+##spect_csv = os.path.join(list_folder, 'spectrogram_listTest8.csv')
+##add_BACinfo(spect_csv,bak_file,'SPECT')
+##add_MergeTaskID(spect_csv,task_file)
 
 #Generating .csv file with list of validation audio
 #tbl_file = os.path.join(os.path.dirname(__file__), 'D1.TBL')
-#output_csv = os.path.join(list_folder, 'wav_labelsVal.csv')
+output_csv = os.path.join(list_folder, 'wav_labelsValUpdated.csv')
 #add_BACinfo(output_csv,bak_file,'WAV')
 #process_tlb_subsetfile(tbl_file,output_csv)
-#start_preprocess(output_csv,'spectrogram_listVal.csv','acoustic_featuresVal.csv',shuffle=True,method='masking')
-spect_csv = os.path.join(list_folder, 'spectrogram_listVal.csv')
-#add_BACinfo(spect_csv,bak_file,'SPECT')
-#add_MergeTaskID(spect_csv,task_file)
+start_preprocess(output_csv,'spectrogram_listVal10.csv','acoustic_featuresVal10.csv',shuffle=True,method=None)
+spect_csv = os.path.join(list_folder, 'spectrogram_listVal10.csv')
+add_BACinfo(spect_csv,bak_file,'SPECT')
+add_MergeTaskID(spect_csv,task_file)
