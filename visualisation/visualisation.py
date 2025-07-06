@@ -178,9 +178,9 @@ def plot_confusion_matrix_advanced(cm, title, output_path, labels=["Sober (0)", 
 
 # --- Main execution ---
 # Set the directory where your 'file.out' is located
-log_directory = r'D:\Uni\Lab\model\v5' # <--- IMPORTANT: SET YOUR DIRECTORY HERE
+log_directory = r'D:\Uni\Lab\model\v9' # <--- IMPORTANT: SET YOUR DIRECTORY HERE
 
-file_path = os.path.join(log_directory, 'finetune_job.16246056.out') 
+file_path = os.path.join(log_directory, 'finetune_job.16246516.out') 
 plots_output_dir = os.path.join(log_directory, 'plots')
 
 # Ensure the plots output directory exists
