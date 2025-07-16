@@ -15,7 +15,7 @@ mpl.rcParams.update({
     "xtick.labelsize": 18,
     "ytick.labelsize": 18,
     "legend.fontsize": 18,
-    "figure.dpi": 300,
+    "figure.dpi": 600,
     "axes.linewidth": 2,
     "lines.linewidth": 3,
     "lines.markersize": 10,
@@ -102,7 +102,7 @@ def plot_metrics_over_epochs(epochs, losses, accuracies, uars, output_dir, title
     axes[2].grid(True)
     plt.tight_layout()
     base_path = os.path.join(output_dir, f'{title_prefix.lower()}_metrics_over_epochs')
-    plt.savefig(base_path + '.png', dpi=300)
+    plt.savefig(base_path + '.png', dpi=600)
     plt.savefig(base_path + '.pdf', format='pdf')
     plt.close(fig)
 
@@ -110,11 +110,11 @@ def plot_confusion_matrix(cm, title, output_path, labels=["Sober (0)", "Drunk (1
     plt.figure(figsize=(10, 8))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', cbar=True,
                 xticklabels=labels, yticklabels=labels, linewidths=.5, square=True)
-    plt.title(title)
+    #plt.title(title)
     plt.xlabel('Predicted Label')
     plt.ylabel('True Label')
     plt.tight_layout()
-    plt.savefig(output_path + '.png', dpi=300)
+    plt.savefig(output_path + '.png', dpi=600)
     plt.savefig(output_path + '.pdf', format='pdf')
     plt.close()
 
@@ -131,11 +131,11 @@ def plot_confusion_matrix_advanced(cm, title, output_path, labels=["Sober (0)", 
     ])
     sns.heatmap(cm, annot=labels_ann, fmt='s', cmap='Blues', cbar=True,
                 xticklabels=labels, yticklabels=labels, linewidths=.5, square=True)
-    plt.title(title)
+    #plt.title(title)
     plt.xlabel('Predicted Label')
     plt.ylabel('True Label')
     plt.tight_layout()
-    plt.savefig(output_path + '.png', dpi=300)
+    plt.savefig(output_path + '.png', dpi=600)
     plt.savefig(output_path + '.pdf', format='pdf')
     plt.close()
 

@@ -33,7 +33,7 @@ base_filename = os.path.splitext(os.path.basename(wav_path))[0]
 # === Clean Plot with Viridis Blue ===
 fig, ax = plt.subplots(figsize=(20, 6), dpi=300)
 
-ax.plot(time, data, color=blue_viridis, linewidth=1.5)
+ax.plot(time, data, color='black', linewidth=1.5)
 
 # Remove axes, ticks, spines, borders
 ax.set_axis_off()
