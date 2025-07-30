@@ -11,6 +11,7 @@ output/
 test_output/
 # Ignore model weights (optional)
 model/
+exp/
 
 # Ignore Python bytecode files
 __pycache__/
@@ -23,3 +24,6 @@ __pycache__/
 
 # Ignore Jupyter notebook checkpoints
 .ipynb_checkpoints/
+others/
+plots/
+papers/
