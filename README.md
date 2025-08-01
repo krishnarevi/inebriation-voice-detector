@@ -1,6 +1,8 @@
 # Detecting Alcohol Inebriation from Speech
 ### 🚀 Project Overview
-This project focuses on developing an intelligent system to detect alcohol inebriation directly from speech. Utilizing advanced deep learning techniques, we've built a robust binary classifier that distinguishes between sober and intoxicated speech. This non-invasive approach offers a promising alternative to traditional detection methods, with potential applications in public safety and health monitoring.
+Driving under the influence of alcohol presents a significant public safety hazard. Traditional detection methods are often intrusive and impractical for continuous monitoring. Speech, however, offers a non-invasive alternative as alcohol consumption significantly alters prosody, fluency, and articulation.
+
+In this work, we developed a binary classifier to identify inebriated speech (defined as speech produced by speakers with a BAC of ≥ 0.05%). By fine-tuning a Wav2Vec2 model, we optimized for Unweighted Average Recall (UAR) and achieved a UAR of 75.69% on the ALC dataset, setting a new state-of-the-art for this task. The model also demonstrates consistent performance across various demographics and speech types.
 
 ### 📚 Dataset
 The project utilizes the Alcohol Language Corpus (ALC), a collection of German speech recordings from both sober and intoxicated speakers. 
