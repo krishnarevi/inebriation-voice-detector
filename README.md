@@ -1,22 +1,59 @@
-# Detecting Alcohol Inebriation from Speech
-### 🚀 Project Overview
-Driving under the influence of alcohol presents a significant public safety hazard. Traditional detection methods are often intrusive and impractical for continuous monitoring. Speech, however, offers a non-invasive alternative as alcohol consumption significantly alters prosody, fluency, and articulation.
+# 🍷 Detecting Alcohol Inebriation from Speech
 
-In this work, we developed a binary classifier to identify inebriated speech (defined as speech produced by speakers with a BAC of ≥ 0.05%). By fine-tuning a Wav2Vec2 model, we optimized for Unweighted Average Recall (UAR) and achieved a UAR of 75.69% on the ALC dataset, setting a new state-of-the-art for this task. The model also demonstrates consistent performance across various demographics and speech types.
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
+[![Model](https://img.shields.io/badge/Model-Wav2Vec2-green.svg)](https://huggingface.co/facebook/wav2vec2-base)
+[![Dataset](https://img.shields.io/badge/Dataset-ALC-orange.svg)](https://www.phonetik.uni-muenchen.de/Bas/BasALCeng.html)
 
-### 📚 Dataset
-The project utilizes the Alcohol Language Corpus (ALC), a collection of German speech recordings from both sober and intoxicated speakers. 
+## 🚀 Overview
 
-### ✨ Features
+Alcohol impairment is a critical factor in road accidents, and existing detection systems are often intrusive or impractical for real-time use. This project explores **speech-based alcohol detection** as a non-invasive alternative.
 
-**Wav2Vec2 Fine-tuning:** Leverages powerful pre-trained speech representations for superior accuracy.
+By fine-tuning a **Wav2Vec2** model, we trained a binary classifier to distinguish between **inebriated** and **sober** speech (BAC ≥ 0.05%). Our approach achieves **state-of-the-art results** on the Alcohol Language Corpus (ALC), with strong generalization across demographics and speech types.
 
-**Robust & Generalizable:** Demonstrated consistent performance across different demographic groups and speech types.
+---
 
-**State-of-the-Art Performance:** Achieves 75.7% Unweighted Average Recall (UAR) on the ALC dataset, setting a new benchmark.
+## 📚 Dataset
 
-### 📊 Results
-Our model significantly outperforms previous methods on the Alcohol Language Corpus (ALC). We've achieved a UAR of 75.7%, which is currently the highest reported performance on this dataset for binary inebriation detection. 
+We use the **Alcohol Language Corpus (ALC)**, a controlled dataset of German speech recordings from speakers in both sober and intoxicated states. It includes:
+
+- Read and spontaneous speech
+- Multiple speakers
+- Demographic variation
+- BAC measurements for each session
+
+> 🔗 [Dataset Info](https://www.phonetik.uni-muenchen.de/Bas/BasALCeng.html)
+
+---
+
+## 🧠 Model
+
+We fine-tuned the **Wav2Vec2** base model for binary classification:
+
+- **Architecture**: Wav2Vec2 + Classification Head
+- **Loss**: Cross-Entropy
+- **Optimization Target**: Unweighted Average Recall (UAR)
+
+### 🔧 Features
+
+- ✅ Fine-tuned **self-supervised speech representations**
+- ✅ **High accuracy** on imbalanced data
+- ✅ Robust across **demographics & speech types**
+- ✅ Lightweight & inference-ready
+
+---
+
+## 📊 Results
+
+| Metric | Score |
+|--------|-------|
+| **UAR (Test)** | **75.7%** |
+| **Baseline UAR** | ~67% |
+| **Improvement** | +8.7% |
+
+> 📈 This is the **highest reported performance** on the ALC dataset for binary alcohol detection.
+
+---
+
 
 ### 🌐 Live Demo & Resources
 Hugging Face Demo: Try out the live demo[here](https://huggingface.co/nagapamel/inebriation-detector)
